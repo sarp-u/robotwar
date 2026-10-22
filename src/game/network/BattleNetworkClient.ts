@@ -21,12 +21,18 @@ export class BattleNetworkClient {
         return this.room?.sessionId;
     }
 
+    get roomId(): string | undefined {
+        return this.room?.roomId;
+    }
+
     get state(): BattleNetworkState | undefined {
         return this.room?.state;
     }
 
-    async connect(): Promise<void> {
-        const room = await this.client.joinOrCreate<BattleNetworkState>('battle');
+    async connect(roomId?: string): Promise<void> {
+        const room = roomId
+            ? await this.client.joinById<BattleNetworkState>(roomId)
+            : await this.client.create<BattleNetworkState>('battle');
 
         if (this.disposed) {
             await room.leave();

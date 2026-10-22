@@ -37,11 +37,15 @@ export class RobotEntity {
 
     aimAt(x: number, y: number): number {
         const angle = PhaserMath.Angle.Between(this.sprite.x, this.sprite.y, x, y);
+        this.setAimAngle(angle);
+        return angle;
+    }
+
+    setAimAngle(angle: number): void {
         this.aimAngle = angle;
         this.sprite.setRotation(angle + Math.PI / 2);
         for (const turret of this.turrets) turret.setRotation(angle);
         this.syncVisuals();
-        return angle;
     }
 
     syncVisuals(): void {
@@ -98,6 +102,12 @@ export class RobotEntity {
             duration: 60,
             yoyo: true
         });
+    }
+
+    destroy(): void {
+        this.stopVisualTweens();
+        this.sprite.destroy();
+        for (const turret of this.turrets) turret.destroy();
     }
 
     protected stopVisualTweens(): void {

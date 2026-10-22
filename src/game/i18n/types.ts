@@ -8,6 +8,11 @@ export interface Translations {
     hudHealth: string;
     hudScore: string;
     hudRobotStatus: string;
+    hudPlayers: string;
+    inviteCopy: string;
+    inviteCopied: string;
+    inviteCopyFailed: string;
+    multiplayerConnectionFailed: string;
     gameRobotDestroyed: string;
     partScoutChassis: string;
     partWalkerLegs: string;

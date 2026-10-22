@@ -62,6 +62,11 @@ export class PlayerRobot extends RobotEntity {
         this.updateEnergyBar();
     }
 
+    setEnergy(energy: number): void {
+        this.currentEnergy = Math.max(0, Math.min(energy, this.stats.energyCapacity));
+        this.updateEnergyBar();
+    }
+
     override syncVisuals(): void {
         super.syncVisuals();
         this.energyBarBackground.setPosition(this.sprite.x, this.sprite.y + 32);
@@ -78,6 +83,12 @@ export class PlayerRobot extends RobotEntity {
         super.setAlpha(alpha);
         this.energyBarBackground.setAlpha(alpha);
         this.energyBarFill.setAlpha(alpha);
+    }
+
+    override destroy(): void {
+        super.destroy();
+        this.energyBarBackground.destroy();
+        this.energyBarFill.destroy();
     }
 
     private updateEnergyBar(): void {

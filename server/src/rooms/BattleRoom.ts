@@ -37,6 +37,7 @@ interface ServerProjectile {
 }
 
 export class BattleRoom extends Room<{ state: BattleState; input: BattleInput }> {
+    // Capacity follows the map so the room and its spawn data cannot drift apart.
     maxClients = ARENA_ONE.spawnPoints.players.length;
     state = new BattleState();
 

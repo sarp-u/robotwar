@@ -1,16 +1,16 @@
 import { Scene } from 'phaser';
+import type { NetworkPlayerState } from '@robotwar/shared/network';
 import { GAME_CONFIG } from '../config/gameConfig';
 import { ARENA_ONE } from '../data/maps/mapDefinition';
 import { calculateRobotStats, DEFAULT_BUILD, fireRateToIntervalMs } from '../data/robotParts';
-import { EnemyRobot } from '../entities/EnemyRobot';
 import { PlayerRobot } from '../entities/PlayerRobot';
 import { ProjectileSystem } from '../entities/ProjectileSystem';
+import { RobotEntity } from '../entities/RobotEntity';
+import { i18n } from '../i18n/I18n';
 import { PlayerInput } from '../input/PlayerInput';
-import { applyDamage } from '../logic/combat';
 import { BattleNetworkClient } from '../network/BattleNetworkClient';
 import { Hud } from '../ui/Hud';
 import { Arena } from '../world/Arena';
-import { i18n } from '../i18n/I18n';
 
 export class Game extends Scene {
     private arena!: Arena;
@@ -18,15 +18,14 @@ export class Game extends Scene {
     private inputController!: PlayerInput;
     private projectileSystem!: ProjectileSystem;
     private networkClient?: BattleNetworkClient;
-    private enemyGroup!: Phaser.Physics.Arcade.Group;
-    private readonly enemies: EnemyRobot[] = [];
-    private readonly enemiesBySprite = new Map<Phaser.Physics.Arcade.Image, EnemyRobot>();
     private hud!: Hud;
     private health = 0;
     private score = 0;
     private nextShotAt = 0;
-    private playerActive = true;
-    private playerInvulnerableUntil = 0;
+    private readonly multiplayerEnabled = import.meta.env.VITE_MULTIPLAYER_ENABLED === 'true';
+    private readonly remotePlayers = new Map<string, RobotEntity>();
+    private readonly networkProjectiles = new Map<string, Phaser.GameObjects.Image>();
+    private collisionsConfigured = false;
 
     constructor() {
         super('Game');
@@ -43,18 +42,13 @@ export class Game extends Scene {
         this.inputController = new PlayerInput(this);
         this.projectileSystem = new ProjectileSystem(this);
         this.hud = new Hud(this, playerStats);
-        this.createEnemies();
-        this.configureCollisions();
+        if (!this.multiplayerEnabled) this.configureCollisions();
         this.configureCamera();
 
         this.hud.update(this.health, playerStats.maxHealth, this.score);
-        this.startPlayerSpawnProtection();
 
-        if (import.meta.env.VITE_MULTIPLAYER_ENABLED === 'true') {
-            this.networkClient = new BattleNetworkClient();
-            void this.networkClient.connect().catch((error: unknown) => {
-                console.warn('Colyseus sunucusuna bağlanılamadı; yerel mod devam ediyor.', error);
-            });
+        if (this.multiplayerEnabled) {
+            this.connectMultiplayer();
             this.events.once('shutdown', () => {
                 void this.networkClient?.disconnect();
             });
@@ -62,24 +56,24 @@ export class Game extends Scene {
     }
 
     update(time: number, delta: number): void {
-        if (!this.playerActive) {
+        const input = this.inputController.read();
+        const aimAngle = this.player.aimAt(input.aimX, input.aimY);
+
+        if (this.networkClient) {
             this.player.setMovement(0, 0);
-            this.projectileSystem.update(delta);
+            this.networkClient.update(delta, {
+                moveX: input.movementX,
+                moveY: input.movementY,
+                aimAngle,
+                firing: input.firing
+            });
+            this.syncNetworkState();
             return;
         }
 
         this.player.regenerateEnergy(delta);
-        const input = this.inputController.read();
         this.player.setMovement(input.movementX, input.movementY);
-        const aimAngle = this.player.aimAt(input.aimX, input.aimY);
         this.player.syncVisuals();
-
-        this.networkClient?.update(delta, {
-            moveX: input.movementX,
-            moveY: input.movementY,
-            aimAngle,
-            firing: input.firing
-        });
 
         if (
             input.firing &&
@@ -96,10 +90,6 @@ export class Game extends Scene {
                     this.player.stats.weaponDamage
                 );
             }
-        }
-
-        for (const enemy of this.enemies) {
-            enemy.update(time, this.player.sprite.x, this.player.sprite.y);
         }
 
         this.projectileSystem.update(delta);
@@ -127,41 +117,12 @@ export class Game extends Scene {
         graphics.destroy();
     }
 
-    private createEnemies(): void {
-        this.enemyGroup = this.physics.add.group();
-
-        for (const spawnPoint of ARENA_ONE.spawnPoints.enemies) {
-            const enemy = new EnemyRobot(
-                this,
-                this.projectileSystem,
-                this.enemyGroup,
-                spawnPoint.x,
-                spawnPoint.y
-            );
-            this.enemies.push(enemy);
-            this.enemiesBySprite.set(enemy.sprite, enemy);
-        }
-    }
-
     private configureCollisions(): void {
+        if (this.collisionsConfigured) return;
+        this.collisionsConfigured = true;
         this.physics.add.collider(this.player.sprite, this.arena.walls);
         this.physics.add.collider(this.projectileSystem.playerProjectiles, this.arena.walls, (projectile) => {
             this.projectileSystem.release(projectile as Phaser.Physics.Arcade.Image);
-        });
-        this.physics.add.collider(this.projectileSystem.enemyProjectiles, this.arena.walls, (projectile) => {
-            this.projectileSystem.release(projectile as Phaser.Physics.Arcade.Image);
-        });
-
-        this.physics.add.overlap(this.projectileSystem.playerProjectiles, this.enemyGroup, (projectile, enemySprite) => {
-            this.hitEnemy(
-                projectile as Phaser.Physics.Arcade.Image,
-                enemySprite as Phaser.Physics.Arcade.Image
-            );
-        });
-
-        // Phaser group-vs-sprite callbacks return the sprite first and group child second.
-        this.physics.add.overlap(this.projectileSystem.enemyProjectiles, this.player.sprite, (_player, projectile) => {
-            this.hitPlayer(projectile as Phaser.Physics.Arcade.Image);
         });
     }
 
@@ -170,63 +131,122 @@ export class Game extends Scene {
         this.cameras.main.startFollow(this.player.sprite, true, 0.09, 0.09);
     }
 
-    private hitEnemy(projectile: Phaser.Physics.Arcade.Image, enemySprite: Phaser.Physics.Arcade.Image): void {
-        const enemy = this.enemiesBySprite.get(enemySprite);
-        const projectileState = this.projectileSystem.getState(projectile);
-        this.projectileSystem.release(projectile);
+    private connectMultiplayer(): void {
+        const client = new BattleNetworkClient();
+        this.networkClient = client;
+        const requestedRoomId = new URLSearchParams(window.location.search).get('roomId')?.trim();
 
-        if (!enemy || !projectileState) return;
+        void client.connect(requestedRoomId || undefined).then(() => {
+            if (this.networkClient !== client || !client.roomId) return;
 
-        const result = enemy.takeDamage(projectileState.damage);
-        if (result.destroyed) this.score += 1;
-        this.hud.update(this.health, this.player.stats.maxHealth, this.score);
-    }
-
-    private hitPlayer(projectile: Phaser.Physics.Arcade.Image): void {
-        const projectileState = this.projectileSystem.getState(projectile);
-        this.projectileSystem.release(projectile);
-
-        if (
-            !projectileState ||
-            !this.playerActive ||
-            this.time.now < this.playerInvulnerableUntil
-        ) return;
-
-        const result = applyDamage(
-            this.health,
-            projectileState.damage,
-            this.player.stats.armor
-        );
-        this.health = result.remainingHealth;
-        this.player.flashDamage();
-        this.cameras.main.shake(90, 0.004);
-        this.hud.update(this.health, this.player.stats.maxHealth, this.score);
-
-        if (result.destroyed) this.respawnPlayer();
-    }
-
-    private respawnPlayer(): void {
-        this.playerActive = false;
-        this.player.sprite.disableBody(true, true);
-        this.player.setVisible(false);
-        this.hud.showMessage(i18n.t('gameRobotDestroyed'));
-
-        this.time.delayedCall(GAME_CONFIG.respawnDelayMs, () => {
-            const playerSpawn = ARENA_ONE.spawnPoints.player;
-            this.health = this.player.stats.maxHealth;
-            this.player.sprite.enableBody(false, playerSpawn.x, playerSpawn.y, true, true);
-            this.player.setPosition(playerSpawn.x, playerSpawn.y);
-            this.player.restoreEnergy();
-            this.player.setVisible(true);
-            this.playerActive = true;
-            this.startPlayerSpawnProtection();
-            this.hud.showRobotStatus(this.player.stats);
-            this.hud.update(this.health, this.player.stats.maxHealth, this.score);
+            const inviteUrl = new URL(window.location.href);
+            inviteUrl.searchParams.set('roomId', client.roomId);
+            window.history.replaceState({}, '', inviteUrl);
+            this.createInviteButton(inviteUrl.toString());
+        }).catch((error: unknown) => {
+            if (this.networkClient !== client) return;
+            console.warn('Colyseus sunucusuna bağlanılamadı; yerel mod devam ediyor.', error);
+            this.networkClient = undefined;
+            this.configureCollisions();
+            this.hud.showMessage(i18n.t('multiplayerConnectionFailed'));
         });
     }
 
-    private startPlayerSpawnProtection(): void {
-        this.playerInvulnerableUntil = this.time.now + GAME_CONFIG.spawnProtectionMs;
-        this.player.blink(GAME_CONFIG.spawnProtectionMs);
+    private createInviteButton(inviteUrl: string): void {
+        const button = this.add.text(this.scale.width - 24, 20, i18n.t('inviteCopy'), {
+            fontFamily: 'Arial Black',
+            fontSize: '15px',
+            color: '#ffffff',
+            backgroundColor: '#0e7490',
+            padding: { x: 14, y: 9 }
+        }).setOrigin(1, 0).setScrollFactor(0).setDepth(100).setInteractive({ useHandCursor: true });
+
+        button.on('pointerdown', () => {
+            if (!navigator.clipboard) {
+                button.setText(i18n.t('inviteCopyFailed'));
+                return;
+            }
+
+            void navigator.clipboard.writeText(inviteUrl)
+                .then(() => button.setText(i18n.t('inviteCopied')))
+                .catch(() => button.setText(i18n.t('inviteCopyFailed')));
+        });
     }
+
+    private syncNetworkState(): void {
+        const state = this.networkClient?.state;
+        const ownSessionId = this.networkClient?.sessionId;
+        if (!state?.players || !state.projectiles || !ownSessionId) return;
+
+        const presentPlayers = new Set<string>();
+        for (const [sessionId, playerState] of state.players) {
+            presentPlayers.add(sessionId);
+            if (sessionId === ownSessionId) {
+                this.syncOwnPlayer(playerState);
+            } else {
+                this.syncRemotePlayer(sessionId, playerState);
+            }
+        }
+
+        for (const [sessionId, robot] of this.remotePlayers) {
+            if (presentPlayers.has(sessionId)) continue;
+            robot.destroy();
+            this.remotePlayers.delete(sessionId);
+        }
+
+        const presentProjectiles = new Set<string>();
+        for (const [projectileId, projectileState] of state.projectiles) {
+            presentProjectiles.add(projectileId);
+            let projectile = this.networkProjectiles.get(projectileId);
+            if (!projectile) {
+                projectile = this.add.image(projectileState.x, projectileState.y, 'projectile')
+                    .setTint(projectileState.ownerId === ownSessionId ? 0x67e8f9 : 0xfb7185)
+                    .setDepth(8);
+                this.networkProjectiles.set(projectileId, projectile);
+            }
+            projectile.setPosition(projectileState.x, projectileState.y);
+        }
+
+        for (const [projectileId, projectile] of this.networkProjectiles) {
+            if (presentProjectiles.has(projectileId)) continue;
+            projectile.destroy();
+            this.networkProjectiles.delete(projectileId);
+        }
+
+        this.hud.showMessage(i18n.t('hudPlayers', {
+            current: state.players.size,
+            max: ARENA_ONE.spawnPoints.players.length
+        }));
+    }
+
+    private syncOwnPlayer(state: NetworkPlayerState): void {
+        this.player.setPosition(state.x, state.y);
+        this.player.setAimAngle(state.aimAngle);
+        this.player.setVisible(state.active);
+        this.player.setEnergy(state.energy);
+        this.health = state.health;
+        this.score = state.score;
+        this.hud.update(state.health, state.maxHealth, state.score);
+    }
+
+    private syncRemotePlayer(sessionId: string, state: NetworkPlayerState): void {
+        let robot = this.remotePlayers.get(sessionId);
+        if (!robot) {
+            robot = new RobotEntity(this, state.x, state.y, {
+                texture: 'enemy-body',
+                turretColor: 0xffc08a,
+                turretOffsets: this.player.stats.weaponBarrelOffsets,
+                bodyRadius: 20,
+                depth: 10,
+                stats: this.player.stats
+            });
+            this.remotePlayers.set(sessionId, robot);
+        }
+
+        // shortcut: snapshots are rendered directly; add interpolation when internet latency is noticeable.
+        robot.setPosition(state.x, state.y);
+        robot.setAimAngle(state.aimAngle);
+        robot.setVisible(state.active);
+    }
+
 }

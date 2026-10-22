@@ -37,18 +37,22 @@ Sunucu bağlantısını hızlıca doğrulamak için sunucu açıkken:
 npm run smoke:multiplayer
 ```
 
+Multiplayer istemcisinde başlangıç düğmesine basınca yeni bir özel oda oluşturulur.
+Sağ üstteki davet düğmesi `?roomId=...` içeren bağlantıyı kopyalar. Bu bağlantıyı
+açıp başlangıç düğmesine basan en fazla yedi kişi aynı odaya katılır.
+
 ## Mevcut prototip
 
 - WASD ile hareket
 - Fareyle nişan alma
 - Sol tıkla ateş
 - Arcade Physics duvar çarpışmaları
-- Ateş eden hedef robotlar
 - Can, hasar, skor ve yeniden doğma
 - Veri tabanlı ilk robot build'i
 - Colyseus `battle` odası ve sunucu otoriteli sabit tick
 - Sunucuda doğrulanan hareket, enerji, fire-rate, mermi ve oyuncular arası hasar
 - İstemciden yalnızca hareket/nişan/ateş input'u gönderilmesi
+- Linkle aynı özel odaya katılan 2–8 oyuncunun ve sunucu mermilerinin çizilmesi
 
 ## Kod sınırları
 
@@ -65,6 +69,6 @@ npm run smoke:multiplayer
 
 1. `Garage` sahnesi ekleyip parça seçimini `RobotBuild` verisine bağla.
 2. İkinci silah ve ikinci bacak tipi ekleyerek build'ler arasında gerçek bir seçim oluştur.
-3. Phaser görsellerini Colyseus state'ine bağlayıp uzak oyuncu ve sunucu mermilerini çiz.
+3. Ağ gecikmesi belirgin olduğunda snapshot interpolation ve istemci tahmini ekle.
 
 Multiplayer aşamasında istemci konum veya hasar sonucu göndermemeli. İstemci yalnızca input göndermeli; hareket, ateş hızı, çarpışma ve hasar sunucuda hesaplanmalı.
