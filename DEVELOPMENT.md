@@ -40,6 +40,8 @@ npm run smoke:multiplayer
 Multiplayer istemcisinde başlangıç düğmesine basınca yeni bir özel oda oluşturulur.
 Sağ üstteki davet düğmesi `?roomId=...` içeren bağlantıyı kopyalar. Bu bağlantıyı
 açıp başlangıç düğmesine basan en fazla yedi kişi aynı odaya katılır.
+Multiplayer modu, aynı bilgisayardaki iki test penceresinden biri odağı kaybetse de
+çizimin güncel kalması için Phaser döngüsünü sabit zamanlayıcıyla çalıştırır.
 
 ## Mevcut prototip
 
@@ -53,6 +55,7 @@ açıp başlangıç düğmesine basan en fazla yedi kişi aynı odaya katılır.
 - Sunucuda doğrulanan hareket, enerji, fire-rate, mermi ve oyuncular arası hasar
 - İstemciden yalnızca hareket/nişan/ateş input'u gönderilmesi
 - Linkle aynı özel odaya katılan 2–8 oyuncunun ve sunucu mermilerinin çizilmesi
+- Yerel oyuncuda client prediction/reconciliation, uzak oyuncularda interpolation
 
 ## Kod sınırları
 
@@ -69,6 +72,6 @@ açıp başlangıç düğmesine basan en fazla yedi kişi aynı odaya katılır.
 
 1. `Garage` sahnesi ekleyip parça seçimini `RobotBuild` verisine bağla.
 2. İkinci silah ve ikinci bacak tipi ekleyerek build'ler arasında gerçek bir seçim oluştur.
-3. Ağ gecikmesi belirgin olduğunda snapshot interpolation ve istemci tahmini ekle.
+3. Ateş anını yerelde gösterip sunucu mermisi geldiğinde birleştiren projectile prediction ekle.
 
 Multiplayer aşamasında istemci konum veya hasar sonucu göndermemeli. İstemci yalnızca input göndermeli; hareket, ateş hızı, çarpışma ve hasar sunucuda hesaplanmalı.

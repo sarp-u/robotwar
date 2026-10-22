@@ -66,6 +66,8 @@ export class RobotEntity {
 
     setPosition(x: number, y: number): void {
         this.sprite.setPosition(x, y);
+        const body = this.sprite.body as Phaser.Physics.Arcade.Body | null;
+        body?.reset(x, y);
         this.syncVisuals();
     }
 

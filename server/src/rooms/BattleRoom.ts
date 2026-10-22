@@ -57,6 +57,7 @@ export class BattleRoom extends Room<{ state: BattleState; input: BattleInput }>
     private nextProjectileId = 1;
 
     onCreate(): void {
+        this.patchRate = 1000 / SIMULATION_CONFIG.tickRate;
         this.setFixedTimestep((context) => this.step(context.dtMs), SIMULATION_CONFIG.tickRate);
     }
 

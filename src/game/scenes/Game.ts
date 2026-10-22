@@ -12,6 +12,11 @@ import { BattleNetworkClient } from '../network/BattleNetworkClient';
 import { Hud } from '../ui/Hud';
 import { Arena } from '../world/Arena';
 
+interface NetworkProjectileView {
+    image: Phaser.GameObjects.Image;
+    correction: { x: number; y: number };
+}
+
 export class Game extends Scene {
     private arena!: Arena;
     private player!: PlayerRobot;
@@ -24,7 +29,7 @@ export class Game extends Scene {
     private nextShotAt = 0;
     private readonly multiplayerEnabled = import.meta.env.VITE_MULTIPLAYER_ENABLED === 'true';
     private readonly remotePlayers = new Map<string, RobotEntity>();
-    private readonly networkProjectiles = new Map<string, Phaser.GameObjects.Image>();
+    private readonly networkProjectiles = new Map<string, NetworkProjectileView>();
     private collisionsConfigured = false;
 
     constructor() {
@@ -61,7 +66,7 @@ export class Game extends Scene {
 
         if (this.networkClient) {
             this.player.setMovement(0, 0);
-            this.networkClient.update(delta, {
+            this.networkClient.update(time, {
                 moveX: input.movementX,
                 moveY: input.movementY,
                 aimAngle,
@@ -128,7 +133,7 @@ export class Game extends Scene {
 
     private configureCamera(): void {
         this.cameras.main.setBounds(0, 0, GAME_CONFIG.worldWidth, GAME_CONFIG.worldHeight);
-        this.cameras.main.startFollow(this.player.sprite, true, 0.09, 0.09);
+        this.cameras.main.startFollow(this.player.sprite, true, 1, 1);
     }
 
     private connectMultiplayer(): void {
@@ -197,19 +202,45 @@ export class Game extends Scene {
         const presentProjectiles = new Set<string>();
         for (const [projectileId, projectileState] of state.projectiles) {
             presentProjectiles.add(projectileId);
-            let projectile = this.networkProjectiles.get(projectileId);
-            if (!projectile) {
-                projectile = this.add.image(projectileState.x, projectileState.y, 'projectile')
+            const renderPosition = this.networkClient?.getProjectileRenderPosition(projectileState)
+                ?? projectileState;
+            let view = this.networkProjectiles.get(projectileId);
+            if (!view) {
+                const owner = state.players.get(projectileState.ownerId);
+                const ownerRenderPosition = owner
+                    ? this.networkClient?.getPlayerRenderPosition(owner) ?? owner
+                    : undefined;
+                const correction = {
+                    x: owner && ownerRenderPosition ? ownerRenderPosition.x - owner.x : 0,
+                    y: owner && ownerRenderPosition ? ownerRenderPosition.y - owner.y : 0
+                };
+                const image = this.add.image(
+                    renderPosition.x + correction.x,
+                    renderPosition.y + correction.y,
+                    'projectile'
+                )
                     .setTint(projectileState.ownerId === ownSessionId ? 0x67e8f9 : 0xfb7185)
                     .setDepth(8);
-                this.networkProjectiles.set(projectileId, projectile);
+                view = { image, correction };
+                this.networkProjectiles.set(projectileId, view);
+                this.tweens.add({
+                    targets: correction,
+                    x: 0,
+                    y: 0,
+                    duration: 120,
+                    ease: 'Quad.Out'
+                });
             }
-            projectile.setPosition(projectileState.x, projectileState.y);
+            view.image.setPosition(
+                renderPosition.x + view.correction.x,
+                renderPosition.y + view.correction.y
+            );
         }
 
-        for (const [projectileId, projectile] of this.networkProjectiles) {
+        for (const [projectileId, view] of this.networkProjectiles) {
             if (presentProjectiles.has(projectileId)) continue;
-            projectile.destroy();
+            this.tweens.killTweensOf(view.correction);
+            view.image.destroy();
             this.networkProjectiles.delete(projectileId);
         }
 
@@ -220,8 +251,8 @@ export class Game extends Scene {
     }
 
     private syncOwnPlayer(state: NetworkPlayerState): void {
-        this.player.setPosition(state.x, state.y);
-        this.player.setAimAngle(state.aimAngle);
+        const renderPosition = this.networkClient?.getPlayerRenderPosition(state) ?? state;
+        this.player.setPosition(renderPosition.x, renderPosition.y);
         this.player.setVisible(state.active);
         this.player.setEnergy(state.energy);
         this.health = state.health;
@@ -243,9 +274,10 @@ export class Game extends Scene {
             this.remotePlayers.set(sessionId, robot);
         }
 
-        // shortcut: snapshots are rendered directly; add interpolation when internet latency is noticeable.
-        robot.setPosition(state.x, state.y);
-        robot.setAimAngle(state.aimAngle);
+        const renderPosition = this.networkClient?.getPlayerRenderPosition(state) ?? state;
+        const renderAim = this.networkClient?.getPlayerRenderAim(state) ?? state.aimAngle;
+        robot.setPosition(renderPosition.x, renderPosition.y);
+        robot.setAimAngle(renderAim);
         robot.setVisible(state.active);
     }
 

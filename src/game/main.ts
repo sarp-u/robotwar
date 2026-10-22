@@ -11,6 +11,11 @@ const config: Phaser.Types.Core.GameConfig = {
     height: 768,
     parent: 'game-container',
     backgroundColor: '#07111f',
+    fps: {
+        target: 60,
+        // Keep side-by-side multiplayer test windows updating when one loses focus.
+        forceSetTimeOut: import.meta.env.VITE_MULTIPLAYER_ENABLED === 'true'
+    },
     physics: {
         default: 'arcade',
         arcade: { gravity: { x: 0, y: 0 }, debug: false }
