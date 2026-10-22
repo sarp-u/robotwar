@@ -1,0 +1,22 @@
+{
+  "name": "@robotwar/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./combat": "./src/combat.ts",
+    "./energy": "./src/energy.ts",
+    "./movement": "./src/movement.ts",
+    "./network": "./src/network.ts",
+    "./projectile": "./src/projectile.ts",
+    "./simulationConfig": "./src/simulationConfig.ts",
+    "./mapDefinition": "./src/mapDefinition.ts",
+    "./robotParts": "./src/robotParts.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.7.2"
+  }
+}

@@ -1,8 +1,13 @@
+import { SIMULATION_CONFIG } from '@robotwar/shared/simulationConfig';
+import { ARENA_ONE } from '../data/maps/mapDefinition';
+
 export const GAME_CONFIG = {
-    worldWidth: 1600,
-    worldHeight: 1200,
-    projectileSpawnOffset: 14,
-    respawnDelayMs: 1200,
+    worldWidth: ARENA_ONE.width,
+    worldHeight: ARENA_ONE.height,
+    projectileSpeed: SIMULATION_CONFIG.projectileSpeed,
+    projectileSpawnOffset: SIMULATION_CONFIG.projectileSpawnOffset,
+    projectilePoolSize: 128,
+    respawnDelayMs: SIMULATION_CONFIG.respawnDelayMs,
     enemyRespawnDelayMs: 2500,
-    spawnProtectionMs: 3000
+    spawnProtectionMs: SIMULATION_CONFIG.spawnProtectionMs
 } as const;

@@ -1,20 +1,21 @@
 import type { Scene } from 'phaser';
 import { Math as PhaserMath } from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig';
-import { ENEMY_STATS } from '../data/robotParts';
+import { ENEMY_STATS, fireRateToIntervalMs } from '../data/robotParts';
+import type { DamageResult } from '../logic/combat';
+import { RobotState } from '../models/RobotState';
 import type { ProjectileSystem } from './ProjectileSystem';
 import { RobotEntity } from './RobotEntity';
 
-export interface EnemyHitResult {
-    damaged: boolean;
-    destroyed: boolean;
-}
+export type EnemyHitResult = DamageResult;
 
 export class EnemyRobot extends RobotEntity {
-    private health = ENEMY_STATS.maxHealth;
+    readonly state = new RobotState({
+        maxHealth: ENEMY_STATS.maxHealth,
+        armor: ENEMY_STATS.armor
+    });
     private nextShotAt = 0;
     private invulnerableUntil = 0;
-    private alive = true;
 
     constructor(
         scene: Scene,
@@ -37,7 +38,7 @@ export class EnemyRobot extends RobotEntity {
     }
 
     update(time: number, targetX: number, targetY: number): void {
-        if (!this.alive || !this.sprite.active || !this.sprite.body?.enable) return;
+        if (!this.state.isAlive || !this.sprite.active || !this.sprite.body?.enable) return;
 
         this.syncVisuals();
         const angle = this.aimAt(targetX, targetY);
@@ -48,35 +49,38 @@ export class EnemyRobot extends RobotEntity {
             time >= this.nextShotAt &&
             time >= this.invulnerableUntil
         ) {
-            this.nextShotAt = time + this.stats.weaponFireCooldownMs;
+            this.nextShotAt = time + fireRateToIntervalMs(this.stats.weaponFireRate);
             this.projectileSystem.fireEnemyProjectile(
                 this.sprite.x,
                 this.sprite.y,
                 angle,
-                this.stats.projectileSpeed,
                 this.stats.weaponDamage
             );
         }
     }
 
     takeDamage(rawDamage: number): EnemyHitResult {
-        if (!this.alive || this.scene.time.now < this.invulnerableUntil) {
-            return { damaged: false, destroyed: false };
+        if (!this.state.isAlive || this.scene.time.now < this.invulnerableUntil) {
+            return {
+                damaged: false,
+                destroyed: false,
+                damageTaken: 0,
+                remainingHealth: this.state.currentHealth
+            };
         }
 
-        this.health -= Math.max(1, rawDamage - this.stats.armor);
+        const result = this.state.takeDamage(rawDamage);
 
-        if (this.health <= 0) {
+        if (result.destroyed) {
             this.die();
-            return { damaged: true, destroyed: true };
+            return result;
         }
 
-        this.flashDamage();
-        return { damaged: true, destroyed: false };
+        if (result.damaged) this.flashDamage();
+        return result;
     }
 
     private die(): void {
-        this.alive = false;
         this.stopVisualTweens();
         this.sprite.disableBody(true, true);
         this.setVisible(false);
@@ -85,11 +89,10 @@ export class EnemyRobot extends RobotEntity {
     }
 
     private respawn(): void {
-        this.health = this.stats.maxHealth;
+        this.state.reset();
         this.sprite.enableBody(false, this.spawnX, this.spawnY, true, true);
         this.setPosition(this.spawnX, this.spawnY);
         this.setVisible(true);
-        this.alive = true;
         this.startSpawnProtection();
     }
 

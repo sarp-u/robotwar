@@ -1,19 +1,6 @@
 import type { Scene } from 'phaser';
 import { GAME_CONFIG } from '../config/gameConfig';
-
-const WALLS: ReadonlyArray<readonly [number, number, number, number]> = [
-    [800, 24, 1600, 48],
-    [800, 1176, 1600, 48],
-    [24, 600, 48, 1200],
-    [1576, 600, 48, 1200],
-    [800, 600, 220, 220],
-    [470, 360, 300, 52],
-    [1130, 360, 300, 52],
-    [470, 840, 300, 52],
-    [1130, 840, 300, 52],
-    [330, 600, 52, 240],
-    [1270, 600, 52, 240]
-];
+import { ARENA_ONE } from '../data/maps/mapDefinition';
 
 export class Arena {
     readonly walls: Phaser.Physics.Arcade.StaticGroup;
@@ -50,9 +37,15 @@ export class Arena {
     private createWalls(): Phaser.Physics.Arcade.StaticGroup {
         const walls = this.scene.physics.add.staticGroup();
 
-        for (const [x, y, width, height] of WALLS) {
-            const wall = walls.create(x, y, 'wall') as Phaser.Physics.Arcade.Image;
-            wall.setDisplaySize(width, height).setTint(0x334155).refreshBody();
+        for (const definition of ARENA_ONE.walls) {
+            const wall = walls.create(
+                definition.x,
+                definition.y,
+                'wall'
+            ) as Phaser.Physics.Arcade.Image;
+            wall.setDisplaySize(definition.width, definition.height)
+                .setTint(0x334155)
+                .refreshBody();
         }
 
         return walls;
